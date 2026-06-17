@@ -1921,24 +1921,22 @@ function renderGallery(urls, targetPaneId) {
 }
 
 function initGallery() {
-  const tabBtns = document.querySelectorAll(
-    '[data-tab-btn]:not([data-tab-btn="highlight"])',
-  );
-  const tabPanes = document.querySelectorAll("[data-tab-pane]");
+  const tabBtns = document.querySelectorAll('[data-tab-btn]:not([data-tab-btn="highlight"])');
+  const tabPanes = document.querySelectorAll('[data-tab-pane]');
   const highlight = document.querySelector('[data-tab-btn="highlight"]');
-  const galleryContainer = document.querySelector(".gallery_tabs-content");
-  const lightboxWrap = document.getElementById("lightbox-wrap");
-  const lightboxImage = document.getElementById("lightbox-image");
-  const lightboxClose = document.getElementById("lightbox-close");
-  const lightboxOverlay = document.getElementById("lightbox-overlay");
+  const galleryContainer = document.querySelector('.gallery_tabs-content');
+  const lightboxWrap = document.getElementById('lightbox-wrap');
+  const lightboxImage = document.getElementById('lightbox-image');
+  const lightboxClose = document.getElementById('lightbox-close');
+  const lightboxOverlay = document.getElementById('lightbox-overlay');
 
-  let currentTab = "ga";
+  let currentTab = 'ga';
   let currentTimeline = null;
   let lastFocusedElement = null;
-
+  
   let currentLightboxImages = [];
   let currentLightboxIndex = 0;
-
+  
   let dragging = false;
   let didDrag = false;
   let startX = 0;
@@ -1947,96 +1945,80 @@ function initGallery() {
   const SWIPE_THRESHOLD = 60;
   const TAP_SLOP = 6;
 
-  lightboxImage.setAttribute("draggable", "false");
+  lightboxImage.setAttribute('draggable', 'false');
 
-  gsap.set(tabPanes, { display: "none", autoAlpha: 0, zIndex: 1 });
-  gsap.set('[data-tab-pane="ga"]', {
-    display: "block",
-    autoAlpha: 1,
-    zIndex: 2,
-  });
+  gsap.set(tabPanes, { display: 'none', autoAlpha: 0, zIndex: 1 });
+  gsap.set('[data-tab-pane="ga"]', { display: 'block', autoAlpha: 1, zIndex: 2 });
   gsap.set(highlight, { xPercent: 0 });
 
   tabBtns.forEach((btn, index) => {
-    btn.addEventListener("click", function () {
-      const targetTab = this.getAttribute("data-tab-btn");
+    btn.addEventListener('click', function () {
+      const targetTab = this.getAttribute('data-tab-btn');
 
       if (targetTab === currentTab) return;
 
       if (currentTimeline) currentTimeline.kill();
 
-      tabBtns.forEach((b) => b.classList.remove("is-active"));
-      this.classList.add("is-active");
+      tabBtns.forEach(b => b.classList.remove('is-active'));
+      this.classList.add('is-active');
 
-      gsap.to(highlight, {
-        xPercent: index * 100,
-        duration: 0.3,
-        ease: "power2.out",
-      });
+      gsap.to(highlight, { xPercent: index * 100, duration: 0.3, ease: 'power2.out' });
 
       const oldPane = document.querySelector(`[data-tab-pane="${currentTab}"]`);
       const newPane = document.querySelector(`[data-tab-pane="${targetTab}"]`);
-      const newImages = newPane.querySelectorAll(".gallery_image-wrapper");
+      const allNewImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
+
+      const imagesToAnimate = allNewImages.slice(0, 15);
+      const imagesToInstantlyShow = allNewImages.slice(15);
 
       currentTab = targetTab;
 
-      tabPanes.forEach((pane) => {
+      tabPanes.forEach(pane => {
         if (pane !== oldPane && pane !== newPane) {
-          gsap.set(pane, { display: "none", autoAlpha: 0 });
+          gsap.set(pane, { display: 'none', autoAlpha: 0 });
         }
       });
 
       currentTimeline = gsap.timeline();
       currentTimeline
-        .set(newPane, { display: "block", zIndex: 2 })
+        .set(newPane, { display: 'block', zIndex: 2 })
         .set(oldPane, { zIndex: 1 })
         .to(oldPane, { autoAlpha: 0, duration: 0.3 }, 0)
         .to(newPane, { autoAlpha: 1, duration: 0.3 }, 0)
-        .set(oldPane, { display: "none" })
-        .fromTo(
-          newImages,
+        .set(oldPane, { display: 'none' })
+        .set(imagesToInstantlyShow, { y: 0, opacity: 1 })
+        .fromTo(imagesToAnimate,
           { y: 20, opacity: 0 },
-          {
-            y: 0,
-            opacity: 1,
-            duration: 0.4,
-            stagger: 0.02,
-            ease: "power2.out",
-          },
-          "-=0.2",
+          { y: 0, opacity: 1, duration: 0.4, stagger: 0.03, ease: 'power2.out' },
+          '-=0.2'
         );
     });
   });
 
   function openLightbox(wrapper) {
-    const allImages = Array.from(
-      document.querySelectorAll(
-        `[data-tab-pane="${currentTab}"] .gallery_image-wrapper`,
-      ),
-    );
+    const allImages = Array.from(document.querySelectorAll(`[data-tab-pane="${currentTab}"] .gallery_image-wrapper`));
     currentLightboxIndex = allImages.indexOf(wrapper);
     currentLightboxImages = allImages;
 
-    const img = wrapper.querySelector("img");
+    const img = wrapper.querySelector('img');
     if (!img) return;
 
     lastFocusedElement = wrapper;
     lightboxImage.src = img.src;
-    lightboxImage.alt = img.alt || "";
+    lightboxImage.alt = img.alt || '';
 
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = 'hidden';
 
-    gsap.to(lightboxWrap, {
-      autoAlpha: 1,
-      duration: 0.3,
-      ease: "power2.out",
-      onComplete: () => lightboxClose.focus(),
+    gsap.to(lightboxWrap, { 
+      autoAlpha: 1, 
+      duration: 0.3, 
+      ease: 'power2.out',
+      onComplete: () => lightboxClose.focus()
     });
-
-    gsap.fromTo(
-      lightboxImage,
+    
+    gsap.fromTo(lightboxImage,
       { scale: 0.95 },
-      { scale: 1, duration: 0.4, ease: "back.out(1.5)", delay: 0.1 },
+      { scale: 1, duration: 0.4, ease: 'back.out(1.5)', delay: 0.1 }
     );
   }
 
@@ -2049,38 +2031,30 @@ function initGallery() {
       currentLightboxIndex = 0;
     }
 
-    const nextImg =
-      currentLightboxImages[currentLightboxIndex].querySelector("img");
+    const nextImg = currentLightboxImages[currentLightboxIndex].querySelector('img');
     const outX = direction === 1 ? -100 : 100;
     const inX = direction === 1 ? 100 : -100;
 
-    gsap
-      .timeline()
-      .to(lightboxImage, {
-        x: outX,
-        opacity: 0,
-        duration: 0.2,
-        ease: "power1.in",
-      })
+    gsap.timeline()
+      .to(lightboxImage, { x: outX, opacity: 0, duration: 0.2, ease: 'power1.in' })
       .call(() => {
         lightboxImage.src = nextImg.src;
-        lightboxImage.alt = nextImg.alt || "";
+        lightboxImage.alt = nextImg.alt || '';
       })
-      .fromTo(
-        lightboxImage,
+      .fromTo(lightboxImage,
         { x: inX, opacity: 0 },
-        { x: 0, opacity: 1, duration: 0.2, ease: "power1.out" },
+        { x: 0, opacity: 1, duration: 0.2, ease: 'power1.out' }
       );
   }
 
-  galleryContainer.addEventListener("click", (e) => {
-    const clickedWrapper = e.target.closest(".gallery_image-wrapper");
+  galleryContainer.addEventListener('click', (e) => {
+    const clickedWrapper = e.target.closest('.gallery_image-wrapper');
     if (clickedWrapper) openLightbox(clickedWrapper);
   });
 
-  galleryContainer.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      const focusedWrapper = e.target.closest(".gallery_image-wrapper");
+  galleryContainer.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      const focusedWrapper = e.target.closest('.gallery_image-wrapper');
       if (focusedWrapper) {
         e.preventDefault();
         openLightbox(focusedWrapper);
@@ -2089,31 +2063,30 @@ function initGallery() {
   });
 
   function onPointerDown(e) {
-    if (e.target.closest(".lightbox_close") || e.target === lightboxOverlay)
-      return;
+    if (e.target.closest('.lightbox_close') || e.target === lightboxOverlay) return;
     dragging = true;
     didDrag = false;
     startX = e.clientX;
     startY = e.clientY;
     lastDx = 0;
-
-    lightboxImage.style.cursor = "grabbing";
+    
+    lightboxImage.style.cursor = 'grabbing';
     gsap.killTweensOf(lightboxImage, "x");
-
-    document.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("pointerup", onPointerUp);
-    document.addEventListener("pointercancel", onPointerUp);
+    
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
   }
 
   function onPointerMove(e) {
     if (!dragging) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
-
+    
     if (!didDrag && (Math.abs(dx) > TAP_SLOP || Math.abs(dy) > TAP_SLOP)) {
       didDrag = true;
     }
-
+    
     if (Math.abs(dx) >= Math.abs(dy)) {
       lastDx = dx;
       gsap.set(lightboxImage, { x: dx });
@@ -2123,54 +2096,52 @@ function initGallery() {
   function onPointerUp() {
     if (!dragging) return;
     dragging = false;
-    lightboxImage.style.cursor = "grab";
-
-    document.removeEventListener("pointermove", onPointerMove);
-    document.removeEventListener("pointerup", onPointerUp);
-    document.removeEventListener("pointercancel", onPointerUp);
-
+    lightboxImage.style.cursor = 'grab';
+    
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+    document.removeEventListener('pointercancel', onPointerUp);
+    
     if (Math.abs(lastDx) > SWIPE_THRESHOLD) {
       navigateLightbox(lastDx < 0 ? 1 : -1);
     } else if (didDrag) {
-      gsap.to(lightboxImage, { x: 0, duration: 0.3, ease: "power2.out" });
+      gsap.to(lightboxImage, { x: 0, duration: 0.3, ease: 'power2.out' });
     }
   }
 
-  lightboxImage.addEventListener("pointerdown", onPointerDown);
-  lightboxImage.addEventListener("click", (e) => e.stopPropagation());
+  lightboxImage.addEventListener('pointerdown', onPointerDown);
+  lightboxImage.addEventListener('click', (e) => e.stopPropagation());
 
   function closeLightbox() {
     gsap.to(lightboxWrap, {
       autoAlpha: 0,
       duration: 0.3,
-      ease: "power2.inOut",
+      ease: 'power2.inOut',
       onComplete: () => {
-        lightboxImage.src = "";
+        lightboxImage.src = '';
         gsap.set(lightboxImage, { x: 0 });
-        document.body.style.overflow = "";
+        document.body.style.overflow = '';
         if (lastFocusedElement) lastFocusedElement.focus();
-      },
+      }
     });
   }
 
-  lightboxClose.addEventListener("click", closeLightbox);
-  lightboxOverlay.addEventListener("click", closeLightbox);
+  lightboxClose.addEventListener('click', closeLightbox);
+  lightboxOverlay.addEventListener('click', closeLightbox);
 
-  lightboxWrap.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && gsap.getProperty(lightboxWrap, "opacity") > 0) {
+  lightboxWrap.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && gsap.getProperty(lightboxWrap, 'opacity') > 0) {
       closeLightbox();
       return;
     }
 
-    if (e.key === "ArrowRight") navigateLightbox(1);
-    if (e.key === "ArrowLeft") navigateLightbox(-1);
+    if (e.key === 'ArrowRight') navigateLightbox(1);
+    if (e.key === 'ArrowLeft') navigateLightbox(-1);
 
-    if (e.key === "Tab") {
-      const focusableElements = lightboxWrap.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
+    if (e.key === 'Tab') {
+      const focusableElements = lightboxWrap.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
       if (!focusableElements.length) return;
-
+      
       const firstElement = focusableElements[0];
       const lastElement = focusableElements[focusableElements.length - 1];
 
@@ -2194,3 +2165,244 @@ document.addEventListener("DOMContentLoaded", () => {
   renderGallery(galleryData.vip, "vip");
   initGallery();
 });
+
+
+function initGallery() {
+  const tabBtns = document.querySelectorAll('[data-tab-btn]:not([data-tab-btn="highlight"])');
+  const tabPanes = document.querySelectorAll('[data-tab-pane]');
+  const highlight = document.querySelector('[data-tab-btn="highlight"]');
+  const galleryContainer = document.querySelector('.gallery_tabs-content');
+  const lightboxWrap = document.getElementById('lightbox-wrap');
+  const lightboxImage = document.getElementById('lightbox-image');
+  const lightboxClose = document.getElementById('lightbox-close');
+  const lightboxOverlay = document.getElementById('lightbox-overlay');
+
+  let currentTab = 'ga';
+  let currentTimeline = null;
+  let lastFocusedElement = null;
+  
+  let currentLightboxImages = [];
+  let currentLightboxIndex = 0;
+  
+  let dragging = false;
+  let didDrag = false;
+  let startX = 0;
+  let startY = 0;
+  let lastDx = 0;
+  const SWIPE_THRESHOLD = 60;
+  const TAP_SLOP = 6;
+
+  lightboxImage.setAttribute('draggable', 'false');
+
+  gsap.set(tabPanes, { display: 'none', autoAlpha: 0, zIndex: 1 });
+  gsap.set('[data-tab-pane="ga"]', { display: 'block', autoAlpha: 1, zIndex: 2 });
+  gsap.set(highlight, { xPercent: 0 });
+
+  tabBtns.forEach((btn, index) => {
+    btn.addEventListener('click', function () {
+      const targetTab = this.getAttribute('data-tab-btn');
+
+      if (targetTab === currentTab) return;
+
+      if (currentTimeline) currentTimeline.kill();
+
+      tabBtns.forEach(b => b.classList.remove('is-active'));
+      this.classList.add('is-active');
+
+      gsap.to(highlight, { xPercent: index * 100, duration: 0.3, ease: 'power2.out' });
+
+      const oldPane = document.querySelector(`[data-tab-pane="${currentTab}"]`);
+      const newPane = document.querySelector(`[data-tab-pane="${targetTab}"]`);
+      const allNewImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
+
+      const imagesToAnimate = allNewImages.slice(0, 15);
+      const imagesToInstantlyShow = allNewImages.slice(15);
+
+      currentTab = targetTab;
+
+      tabPanes.forEach(pane => {
+        if (pane !== oldPane && pane !== newPane) {
+          gsap.set(pane, { display: 'none', autoAlpha: 0 });
+        }
+      });
+
+      currentTimeline = gsap.timeline();
+      currentTimeline
+        .set(newPane, { display: 'block', zIndex: 2 })
+        .set(oldPane, { zIndex: 1 })
+        .to(oldPane, { autoAlpha: 0, duration: 0.3 }, 0)
+        .to(newPane, { autoAlpha: 1, duration: 0.3 }, 0)
+        .set(oldPane, { display: 'none' })
+        .set(imagesToInstantlyShow, { y: 0, opacity: 1 })
+        .fromTo(imagesToAnimate,
+          { y: 20, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.4, stagger: 0.03, ease: 'power2.out' },
+          '-=0.2'
+        );
+    });
+  });
+
+  function openLightbox(wrapper) {
+    const allImages = Array.from(document.querySelectorAll(`[data-tab-pane="${currentTab}"] .gallery_image-wrapper`));
+    currentLightboxIndex = allImages.indexOf(wrapper);
+    currentLightboxImages = allImages;
+
+    const img = wrapper.querySelector('img');
+    if (!img) return;
+
+    lastFocusedElement = wrapper;
+    lightboxImage.src = img.src;
+    lightboxImage.alt = img.alt || '';
+
+    document.body.style.overflow = 'hidden';
+
+    gsap.to(lightboxWrap, { 
+      autoAlpha: 1, 
+      duration: 0.3, 
+      ease: 'power2.out',
+      onComplete: () => lightboxClose.focus()
+    });
+    
+    gsap.fromTo(lightboxImage,
+      { scale: 0.95 },
+      { scale: 1, duration: 0.4, ease: 'back.out(1.5)', delay: 0.1 }
+    );
+  }
+
+  function navigateLightbox(direction) {
+    currentLightboxIndex += direction;
+
+    if (currentLightboxIndex < 0) {
+      currentLightboxIndex = currentLightboxImages.length - 1;
+    } else if (currentLightboxIndex >= currentLightboxImages.length) {
+      currentLightboxIndex = 0;
+    }
+
+    const nextImg = currentLightboxImages[currentLightboxIndex].querySelector('img');
+    const outX = direction === 1 ? -100 : 100;
+    const inX = direction === 1 ? 100 : -100;
+
+    gsap.timeline()
+      .to(lightboxImage, { x: outX, opacity: 0, duration: 0.2, ease: 'power1.in' })
+      .call(() => {
+        lightboxImage.src = nextImg.src;
+        lightboxImage.alt = nextImg.alt || '';
+      })
+      .fromTo(lightboxImage,
+        { x: inX, opacity: 0 },
+        { x: 0, opacity: 1, duration: 0.2, ease: 'power1.out' }
+      );
+  }
+
+  galleryContainer.addEventListener('click', (e) => {
+    const clickedWrapper = e.target.closest('.gallery_image-wrapper');
+    if (clickedWrapper) openLightbox(clickedWrapper);
+  });
+
+  galleryContainer.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      const focusedWrapper = e.target.closest('.gallery_image-wrapper');
+      if (focusedWrapper) {
+        e.preventDefault();
+        openLightbox(focusedWrapper);
+      }
+    }
+  });
+
+  function onPointerDown(e) {
+    if (e.target.closest('.lightbox_close') || e.target === lightboxOverlay) return;
+    dragging = true;
+    didDrag = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    lastDx = 0;
+    
+    lightboxImage.style.cursor = 'grabbing';
+    gsap.killTweensOf(lightboxImage, "x");
+    
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
+  }
+
+  function onPointerMove(e) {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    
+    if (!didDrag && (Math.abs(dx) > TAP_SLOP || Math.abs(dy) > TAP_SLOP)) {
+      didDrag = true;
+    }
+    
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      lastDx = dx;
+      gsap.set(lightboxImage, { x: dx });
+    }
+  }
+
+  function onPointerUp() {
+    if (!dragging) return;
+    dragging = false;
+    lightboxImage.style.cursor = 'grab';
+    
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+    document.removeEventListener('pointercancel', onPointerUp);
+    
+    if (Math.abs(lastDx) > SWIPE_THRESHOLD) {
+      navigateLightbox(lastDx < 0 ? 1 : -1);
+    } else if (didDrag) {
+      gsap.to(lightboxImage, { x: 0, duration: 0.3, ease: 'power2.out' });
+    }
+  }
+
+  lightboxImage.addEventListener('pointerdown', onPointerDown);
+  lightboxImage.addEventListener('click', (e) => e.stopPropagation());
+
+  function closeLightbox() {
+    gsap.to(lightboxWrap, {
+      autoAlpha: 0,
+      duration: 0.3,
+      ease: 'power2.inOut',
+      onComplete: () => {
+        lightboxImage.src = '';
+        gsap.set(lightboxImage, { x: 0 });
+        document.body.style.overflow = '';
+        if (lastFocusedElement) lastFocusedElement.focus();
+      }
+    });
+  }
+
+  lightboxClose.addEventListener('click', closeLightbox);
+  lightboxOverlay.addEventListener('click', closeLightbox);
+
+  lightboxWrap.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && gsap.getProperty(lightboxWrap, 'opacity') > 0) {
+      closeLightbox();
+      return;
+    }
+
+    if (e.key === 'ArrowRight') navigateLightbox(1);
+    if (e.key === 'ArrowLeft') navigateLightbox(-1);
+
+    if (e.key === 'Tab') {
+      const focusableElements = lightboxWrap.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (!focusableElements.length) return;
+      
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+          lastElement.focus();
+          e.preventDefault();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          firstElement.focus();
+          e.preventDefault();
+        }
+      }
+    }
+  });
+}
