@@ -1904,14 +1904,13 @@ const galleryData = {
 var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 var CHUNK_SIZE = 18;
 
-var galleryState = {
-  ga: { rendered: 0, total: galleryData.ga.length, data: galleryData.ga },
-  vip: { rendered: 0, total: galleryData.vip.length, data: galleryData.vip }
+var state = {
+  ga: { rendered: 0, data: galleryData.ga },
+  vip: { rendered: 0, data: galleryData.vip }
 };
 
 var currentTab = 'ga';
 var currentLightboxIndex = 0;
-var currentTimeline = null;
 var lastFocusedElement = null;
 
 var lazyObserver = new IntersectionObserver(function (entries) {
@@ -1937,21 +1936,24 @@ var scrollObserver = new IntersectionObserver(function(entries) {
 }, { rootMargin: '600px' });
 
 function loadNextChunk(tabId) {
-  var state = galleryState[tabId];
-  if (state.rendered >= state.total) return;
+  var tabState = state[tabId];
+  if (tabState.rendered >= tabState.data.length) return;
 
   var container = document.querySelector('[data-tab-pane="' + tabId + '"] .gallery_list');
-  var toRender = state.data.slice(state.rendered, state.rendered + CHUNK_SIZE);
+  var toRender = tabState.data.slice(tabState.rendered, tabState.rendered + CHUNK_SIZE);
   var fragment = document.createDocumentFragment();
 
   toRender.forEach(function (item, chunkIndex) {
-    var globalIndex = state.rendered + chunkIndex;
+    var globalIndex = tabState.rendered + chunkIndex;
     var wrapper = document.createElement('div');
     wrapper.className = 'gallery_image-wrapper';
     wrapper.setAttribute('role', 'button');
     wrapper.setAttribute('tabindex', '0');
     wrapper.setAttribute('aria-label', 'View larger image');
     wrapper.setAttribute('data-index', globalIndex);
+    
+    // SAFARI FIX: Forces iOS to recognize taps on this div
+    wrapper.style.cursor = 'pointer'; 
     wrapper.style.touchAction = 'manipulation';
 
     var img = document.createElement('img');
@@ -1959,6 +1961,10 @@ function loadNextChunk(tabId) {
     img.alt = item.alt || '';
     img.className = 'gallery_image';
     img.draggable = false;
+    
+    // SAFARI FIX: Forces image processing off the Main Thread so the UI never freezes
+    img.decoding = 'async'; 
+    
     img.onload = function () { this.parentElement.classList.add('is-loaded'); };
 
     wrapper.appendChild(img);
@@ -1967,10 +1973,10 @@ function loadNextChunk(tabId) {
   });
 
   container.appendChild(fragment);
-  state.rendered += toRender.length;
+  tabState.rendered += toRender.length;
 
   var lastChild = container.lastElementChild;
-  if (lastChild && state.rendered < state.total) {
+  if (lastChild && tabState.rendered < tabState.data.length) {
     lastChild.setAttribute('data-tab-marker', tabId);
     scrollObserver.observe(lastChild);
   }
@@ -1994,64 +2000,49 @@ function initGallery() {
   var SWIPE_THRESHOLD = 60;
   var TAP_SLOP = 6;
 
-  tabBtns.forEach(function (btn) { 
-    btn.style.touchAction = 'manipulation'; 
-  });
-  
+  tabBtns.forEach(function (btn) { btn.style.touchAction = 'manipulation'; });
   lightboxImage.setAttribute('draggable', 'false');
 
-  gsap.set(tabPanes, { display: 'none', autoAlpha: 0 });
-  gsap.set('[data-tab-pane="ga"]', { display: 'block', autoAlpha: 1 });
+  // Initial State
+  tabPanes.forEach(function(pane) { pane.style.display = 'none'; });
+  document.querySelector('[data-tab-pane="ga"]').style.display = 'block';
   gsap.set(highlight, { xPercent: 0 });
 
+  // 1. LIGHTNING FAST TAB SWITCHING (No JS locks)
   tabBtns.forEach(function (btn, index) {
     btn.addEventListener('click', function () {
       var targetTab = this.getAttribute('data-tab-btn');
-      if (targetTab === currentTab || isTransitioning) return;
+      if (targetTab === currentTab) return;
 
-      isTransitioning = true;
-      
-      // SAFARI FAIL-SAFE: Force unlock the UI after 600ms no matter what
-      setTimeout(function() {
-        isTransitioning = false;
-      }, 600);
-
+      // Update Buttons
       tabBtns.forEach(function (b) { b.classList.remove('is-active'); });
       this.classList.add('is-active');
       gsap.to(highlight, { xPercent: index * 100, duration: 0.3, ease: 'power2.out' });
 
       var oldPane = document.querySelector('[data-tab-pane="' + currentTab + '"]');
       var newPane = document.querySelector('[data-tab-pane="' + targetTab + '"]');
-      var oldList = oldPane.querySelector('.gallery_list');
 
-      // Uncouple the DOM teardown from the GSAP tween
-      gsap.to(oldPane, { autoAlpha: 0, duration: 0.2 });
-      
-      setTimeout(function() {
-        oldList.innerHTML = '';
-        state[currentTab].rendered = 0;
-        gsap.set(oldPane, { display: 'none' });
+      // Instant DOM swap - zero layout calculations
+      oldPane.style.display = 'none';
+      newPane.style.display = 'block';
+      currentTab = targetTab;
 
-        currentTab = targetTab;
-        gsap.set(newPane, { display: 'block', autoAlpha: 1 });
-        loadNextChunk(currentTab);
+      // Inject HTML if empty
+      if (state[targetTab].rendered === 0) {
+        loadNextChunk(targetTab);
+      }
 
-        var newItems = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
-        
-        if (!prefersReducedMotion && newItems.length > 0) {
-          gsap.fromTo(newItems,
-            { y: 20, opacity: 0 },
-            { 
-              y: 0, 
-              opacity: 1, 
-              duration: 0.3, 
-              stagger: 0.03, 
-              ease: 'power2.out'
-              // Removed the onComplete lock dependency here
-            }
-          );
-        }
-      }, 200); // Wait exactly 200ms for the fade out to finish, then swap
+      // Kill any leftover animations immediately
+      gsap.killTweensOf('.gallery_image-wrapper');
+
+      // Stagger only the visible items
+      var newItems = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
+      if (!prefersReducedMotion && newItems.length > 0) {
+        gsap.fromTo(newItems.slice(0, 15),
+          { y: 20, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.3, stagger: 0.02, ease: 'power2.out' }
+        );
+      }
     });
   });
 
@@ -2122,14 +2113,13 @@ function initGallery() {
       );
   }
 
+  // Gallery Click & Keyboard (Delegated)
   galleryContainer.addEventListener('click', function (e) {
-    if (isTransitioning) return;
     var clickedWrapper = e.target.closest('.gallery_image-wrapper');
     if (clickedWrapper) openLightbox(clickedWrapper);
   });
 
   galleryContainer.addEventListener('keydown', function (e) {
-    if (isTransitioning) return;
     if (e.key === 'Enter' || e.key === ' ') {
       var focusedWrapper = e.target.closest('.gallery_image-wrapper');
       if (focusedWrapper) {
@@ -2139,6 +2129,7 @@ function initGallery() {
     }
   });
 
+  // Lightbox Swipe Logic
   function onPointerDown(e) {
     if (e.target.closest('.lightbox_close') || e.target === lightboxOverlay) return;
     dragging = true;
