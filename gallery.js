@@ -1901,49 +1901,90 @@ const galleryData = {
   ],
 };
 
-function renderGallery(urls, targetPaneId) {
-  const container = document.querySelector(
-    `[data-tab-pane="${targetPaneId}"] .gallery_list`,
-  );
+var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+var renderedTabs = new Set();
+
+var visitedTabs = new Set(['ga']);
+
+function renderGallery(images, tabId) {
+  if (renderedTabs.has(tabId)) return;
+
+  var container = document.querySelector('[data-tab-pane="' + tabId + '"] .gallery_list');
   if (!container) return;
 
-  const html = urls
-    .map(
-      (item) => `
-    <div class="gallery_image-wrapper" role="button" tabindex="0" aria-label="View larger image">
-      <img src="${item.src}" loading="lazy" alt="${item.alt}" class="gallery_image" onload="this.parentElement.classList.add('is-loaded')">
-    </div>
-  `,
-    )
-    .join("");
+  var fragment = document.createDocumentFragment();
 
-  container.innerHTML = html;
+  images.forEach(function (item) {
+    var wrapper = document.createElement('div');
+    wrapper.className = 'gallery_image-wrapper';
+    wrapper.setAttribute('role', 'button');
+    wrapper.setAttribute('tabindex', '0');
+    wrapper.setAttribute('aria-label', 'View larger image');
+    wrapper.style.touchAction = 'manipulation';
+
+    var img = document.createElement('img');
+    img.src = item.src;
+    img.loading = 'lazy';
+    img.alt = item.alt;
+    img.className = 'gallery_image';
+    img.draggable = false;
+    img.onload = function () { wrapper.classList.add('is-loaded'); };
+
+    wrapper.appendChild(img);
+    fragment.appendChild(wrapper);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(fragment);
+  renderedTabs.add(tabId);
+}
+
+function getVisibleCount(pane) {
+  var paneRect = pane.getBoundingClientRect();
+  var wrappers = pane.querySelectorAll('.gallery_image-wrapper');
+  var count = 0;
+
+  for (var i = 0; i < wrappers.length; i++) {
+    var rect = wrappers[i].getBoundingClientRect();
+    if (rect.top < paneRect.bottom + 100) {
+      count++;
+    } else {
+      break;
+    }
+  }
+
+  return Math.max(1, Math.min(count, 20));
 }
 
 function initGallery() {
-  const tabBtns = document.querySelectorAll('[data-tab-btn]:not([data-tab-btn="highlight"])');
-  const tabPanes = document.querySelectorAll('[data-tab-pane]');
-  const highlight = document.querySelector('[data-tab-btn="highlight"]');
-  const galleryContainer = document.querySelector('.gallery_tabs-content');
-  const lightboxWrap = document.getElementById('lightbox-wrap');
-  const lightboxImage = document.getElementById('lightbox-image');
-  const lightboxClose = document.getElementById('lightbox-close');
-  const lightboxOverlay = document.getElementById('lightbox-overlay');
+  var tabBtns = document.querySelectorAll('[data-tab-btn]:not([data-tab-btn="highlight"])');
+  var tabPanes = document.querySelectorAll('[data-tab-pane]');
+  var highlight = document.querySelector('[data-tab-btn="highlight"]');
+  var galleryContainer = document.querySelector('.gallery_tabs-content');
+  var lightboxWrap = document.getElementById('lightbox-wrap');
+  var lightboxImage = document.getElementById('lightbox-image');
+  var lightboxClose = document.getElementById('lightbox-close');
+  var lightboxOverlay = document.getElementById('lightbox-overlay');
 
-  let currentTab = 'ga';
-  let currentTimeline = null;
-  let lastFocusedElement = null;
-  
-  let currentLightboxImages = [];
-  let currentLightboxIndex = 0;
-  
-  let dragging = false;
-  let didDrag = false;
-  let startX = 0;
-  let startY = 0;
-  let lastDx = 0;
-  const SWIPE_THRESHOLD = 60;
-  const TAP_SLOP = 6;
+  var currentTab = 'ga';
+  var currentTimeline = null;
+  var lastFocusedElement = null;
+
+  var currentLightboxImages = [];
+  var currentLightboxIndex = 0;
+
+  var dragging = false;
+  var didDrag = false;
+  var startX = 0;
+  var startY = 0;
+  var lastDx = 0;
+  var SWIPE_THRESHOLD = 60;
+  var TAP_SLOP = 6;
+
+  tabBtns.forEach(function (btn) {
+    btn.style.touchAction = 'manipulation';
+  });
 
   lightboxImage.setAttribute('draggable', 'false');
 
@@ -1951,56 +1992,75 @@ function initGallery() {
   gsap.set('[data-tab-pane="ga"]', { display: 'block', autoAlpha: 1, zIndex: 2 });
   gsap.set(highlight, { xPercent: 0 });
 
-  tabBtns.forEach((btn, index) => {
+  // TABS
+  tabBtns.forEach(function (btn, index) {
     btn.addEventListener('click', function () {
-      const targetTab = this.getAttribute('data-tab-btn');
-
+      var targetTab = this.getAttribute('data-tab-btn');
       if (targetTab === currentTab) return;
 
       if (currentTimeline) currentTimeline.kill();
 
-      tabBtns.forEach(b => b.classList.remove('is-active'));
+      tabBtns.forEach(function (b) { b.classList.remove('is-active'); });
       this.classList.add('is-active');
 
       gsap.to(highlight, { xPercent: index * 100, duration: 0.3, ease: 'power2.out' });
 
-      const oldPane = document.querySelector(`[data-tab-pane="${currentTab}"]`);
-      const newPane = document.querySelector(`[data-tab-pane="${targetTab}"]`);
-      const allNewImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
+      // Render images on first visit to this tab
+      if (!renderedTabs.has(targetTab)) {
+        renderGallery(galleryData[targetTab], targetTab);
+      }
 
-      const imagesToAnimate = allNewImages.slice(0, 15);
-      const imagesToInstantlyShow = allNewImages.slice(15);
+      var oldPane = document.querySelector('[data-tab-pane="' + currentTab + '"]');
+      var newPane = document.querySelector('[data-tab-pane="' + targetTab + '"]');
 
+      var isFirstVisit = !visitedTabs.has(targetTab);
+      visitedTabs.add(targetTab);
       currentTab = targetTab;
 
-      tabPanes.forEach(pane => {
+      // Hide all other panes immediately
+      tabPanes.forEach(function (pane) {
         if (pane !== oldPane && pane !== newPane) {
           gsap.set(pane, { display: 'none', autoAlpha: 0 });
         }
       });
 
       currentTimeline = gsap.timeline();
+
+      // Crossfade the panes
       currentTimeline
         .set(newPane, { display: 'block', zIndex: 2 })
         .set(oldPane, { zIndex: 1 })
         .to(oldPane, { autoAlpha: 0, duration: 0.3 }, 0)
         .to(newPane, { autoAlpha: 1, duration: 0.3 }, 0)
-        .set(oldPane, { display: 'none' })
-        .set(imagesToInstantlyShow, { y: 0, opacity: 1 })
-        .fromTo(imagesToAnimate,
-          { y: 20, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.4, stagger: 0.03, ease: 'power2.out' },
-          '-=0.2'
-        );
+        .set(oldPane, { display: 'none' });
+
+      // Only stagger-animate on first visit and if motion is allowed
+      if (isFirstVisit && !prefersReducedMotion) {
+        var visibleCount = getVisibleCount(newPane);
+        var allImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
+        var imagesToAnimate = allImages.slice(0, visibleCount);
+        var imagesToShow = allImages.slice(visibleCount);
+
+        currentTimeline
+          .set(imagesToShow, { y: 0, opacity: 1 })
+          .fromTo(imagesToAnimate,
+            { y: 20, opacity: 0 },
+            { y: 0, opacity: 1, duration: 0.35, stagger: 0.03, ease: 'power2.out' },
+            '-=0.2'
+          );
+      }
     });
   });
 
+  // LIGHTBOX OPEN
   function openLightbox(wrapper) {
-    const allImages = Array.from(document.querySelectorAll(`[data-tab-pane="${currentTab}"] .gallery_image-wrapper`));
+    var allImages = Array.from(
+      document.querySelectorAll('[data-tab-pane="' + currentTab + '"] .gallery_image-wrapper')
+    );
     currentLightboxIndex = allImages.indexOf(wrapper);
     currentLightboxImages = allImages;
 
-    const img = wrapper.querySelector('img');
+    var img = wrapper.querySelector('img');
     if (!img) return;
 
     lastFocusedElement = wrapper;
@@ -2009,19 +2069,26 @@ function initGallery() {
 
     document.body.style.overflow = 'hidden';
 
-    gsap.to(lightboxWrap, { 
-      autoAlpha: 1, 
-      duration: 0.3, 
-      ease: 'power2.out',
-      onComplete: () => lightboxClose.focus()
-    });
-    
-    gsap.fromTo(lightboxImage,
-      { scale: 0.95 },
-      { scale: 1, duration: 0.4, ease: 'back.out(1.5)', delay: 0.1 }
-    );
+    if (prefersReducedMotion) {
+      gsap.set(lightboxWrap, { autoAlpha: 1 });
+      gsap.set(lightboxImage, { scale: 1 });
+      lightboxClose.focus();
+    } else {
+      gsap.to(lightboxWrap, {
+        autoAlpha: 1,
+        duration: 0.3,
+        ease: 'power2.out',
+        onComplete: function () { lightboxClose.focus(); },
+      });
+
+      gsap.fromTo(lightboxImage,
+        { scale: 0.95 },
+        { scale: 1, duration: 0.4, ease: 'back.out(1.5)', delay: 0.1 }
+      );
+    }
   }
 
+  // LIGHTBOX NAVIGATE
   function navigateLightbox(direction) {
     currentLightboxIndex += direction;
 
@@ -2031,13 +2098,20 @@ function initGallery() {
       currentLightboxIndex = 0;
     }
 
-    const nextImg = currentLightboxImages[currentLightboxIndex].querySelector('img');
-    const outX = direction === 1 ? -100 : 100;
-    const inX = direction === 1 ? 100 : -100;
+    var nextImg = currentLightboxImages[currentLightboxIndex].querySelector('img');
+    var outX = direction === 1 ? -100 : 100;
+    var inX = direction === 1 ? 100 : -100;
+
+    if (prefersReducedMotion) {
+      lightboxImage.src = nextImg.src;
+      lightboxImage.alt = nextImg.alt || '';
+      gsap.set(lightboxImage, { x: 0, opacity: 1 });
+      return;
+    }
 
     gsap.timeline()
       .to(lightboxImage, { x: outX, opacity: 0, duration: 0.2, ease: 'power1.in' })
-      .call(() => {
+      .call(function () {
         lightboxImage.src = nextImg.src;
         lightboxImage.alt = nextImg.alt || '';
       })
@@ -2047,14 +2121,15 @@ function initGallery() {
       );
   }
 
-  galleryContainer.addEventListener('click', (e) => {
-    const clickedWrapper = e.target.closest('.gallery_image-wrapper');
+  // GALLERY CLICK / KEYBOARD
+  galleryContainer.addEventListener('click', function (e) {
+    var clickedWrapper = e.target.closest('.gallery_image-wrapper');
     if (clickedWrapper) openLightbox(clickedWrapper);
   });
 
-  galleryContainer.addEventListener('keydown', (e) => {
+  galleryContainer.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' || e.key === ' ') {
-      const focusedWrapper = e.target.closest('.gallery_image-wrapper');
+      var focusedWrapper = e.target.closest('.gallery_image-wrapper');
       if (focusedWrapper) {
         e.preventDefault();
         openLightbox(focusedWrapper);
@@ -2062,6 +2137,7 @@ function initGallery() {
     }
   });
 
+  // LIGHTBOX SWIPE
   function onPointerDown(e) {
     if (e.target.closest('.lightbox_close') || e.target === lightboxOverlay) return;
     dragging = true;
@@ -2069,10 +2145,10 @@ function initGallery() {
     startX = e.clientX;
     startY = e.clientY;
     lastDx = 0;
-    
+
     lightboxImage.style.cursor = 'grabbing';
-    gsap.killTweensOf(lightboxImage, "x");
-    
+    gsap.killTweensOf(lightboxImage, 'x');
+
     document.addEventListener('pointermove', onPointerMove);
     document.addEventListener('pointerup', onPointerUp);
     document.addEventListener('pointercancel', onPointerUp);
@@ -2080,13 +2156,13 @@ function initGallery() {
 
   function onPointerMove(e) {
     if (!dragging) return;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    
+    var dx = e.clientX - startX;
+    var dy = e.clientY - startY;
+
     if (!didDrag && (Math.abs(dx) > TAP_SLOP || Math.abs(dy) > TAP_SLOP)) {
       didDrag = true;
     }
-    
+
     if (Math.abs(dx) >= Math.abs(dy)) {
       lastDx = dx;
       gsap.set(lightboxImage, { x: dx });
@@ -2097,11 +2173,11 @@ function initGallery() {
     if (!dragging) return;
     dragging = false;
     lightboxImage.style.cursor = 'grab';
-    
+
     document.removeEventListener('pointermove', onPointerMove);
     document.removeEventListener('pointerup', onPointerUp);
     document.removeEventListener('pointercancel', onPointerUp);
-    
+
     if (Math.abs(lastDx) > SWIPE_THRESHOLD) {
       navigateLightbox(lastDx < 0 ? 1 : -1);
     } else if (didDrag) {
@@ -2110,26 +2186,37 @@ function initGallery() {
   }
 
   lightboxImage.addEventListener('pointerdown', onPointerDown);
-  lightboxImage.addEventListener('click', (e) => e.stopPropagation());
+  lightboxImage.addEventListener('click', function (e) { e.stopPropagation(); });
 
+  // LIGHTBOX CLOSE
   function closeLightbox() {
+    if (prefersReducedMotion) {
+      gsap.set(lightboxWrap, { autoAlpha: 0 });
+      lightboxImage.src = '';
+      gsap.set(lightboxImage, { x: 0 });
+      document.body.style.overflow = '';
+      if (lastFocusedElement) lastFocusedElement.focus();
+      return;
+    }
+
     gsap.to(lightboxWrap, {
       autoAlpha: 0,
       duration: 0.3,
       ease: 'power2.inOut',
-      onComplete: () => {
+      onComplete: function () {
         lightboxImage.src = '';
         gsap.set(lightboxImage, { x: 0 });
         document.body.style.overflow = '';
         if (lastFocusedElement) lastFocusedElement.focus();
-      }
+      },
     });
   }
 
   lightboxClose.addEventListener('click', closeLightbox);
   lightboxOverlay.addEventListener('click', closeLightbox);
 
-  lightboxWrap.addEventListener('keydown', (e) => {
+  // LIGHTBOX KEYBOARD / FOCUS TRAP
+  lightboxWrap.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && gsap.getProperty(lightboxWrap, 'opacity') > 0) {
       closeLightbox();
       return;
@@ -2139,11 +2226,13 @@ function initGallery() {
     if (e.key === 'ArrowLeft') navigateLightbox(-1);
 
     if (e.key === 'Tab') {
-      const focusableElements = lightboxWrap.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      var focusableElements = lightboxWrap.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
       if (!focusableElements.length) return;
-      
-      const firstElement = focusableElements[0];
-      const lastElement = focusableElements[focusableElements.length - 1];
+
+      var firstElement = focusableElements[0];
+      var lastElement = focusableElements[focusableElements.length - 1];
 
       if (e.shiftKey) {
         if (document.activeElement === firstElement) {
@@ -2160,8 +2249,7 @@ function initGallery() {
   });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  renderGallery(galleryData.ga, "ga");
-  renderGallery(galleryData.vip, "vip");
+document.addEventListener('DOMContentLoaded', function () {
+  renderGallery(galleryData.ga, 'ga');
   initGallery();
 });
