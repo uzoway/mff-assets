@@ -1903,81 +1903,45 @@ const galleryData = {
 
 var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-var renderedTabs = {};
+var lazyObserver = new IntersectionObserver(function (entries) {
+  entries.forEach(function (entry) {
+    if (!entry.isIntersecting) return;
+    var img = entry.target.querySelector('img[data-src]');
+    if (img) {
+      img.src = img.dataset.src;
+      img.removeAttribute('data-src');
+    }
+    lazyObserver.unobserve(entry.target);
+  });
+}, { rootMargin: '400px' });
 
-function renderGallery(images, tabId, onReady) {
+function renderGallery(images, tabId) {
   var container = document.querySelector('[data-tab-pane="' + tabId + '"] .gallery_list');
-  if (!container) return;
+  if (!container || container.children.length > 0) return;
 
-  if (renderedTabs[tabId] === 'done') {
-    if (onReady) onReady();
-    return;
-  }
+  var fragment = document.createDocumentFragment();
 
-  if (renderedTabs[tabId] === 'rendering') {
-    if (onReady) {
-      var check = setInterval(function () {
-        if (renderedTabs[tabId] === 'done') {
-          clearInterval(check);
-          onReady();
-        }
-      }, 16);
-    }
-    return;
-  }
+  images.forEach(function (item) {
+    var wrapper = document.createElement('div');
+    wrapper.className = 'gallery_image-wrapper';
+    wrapper.setAttribute('role', 'button');
+    wrapper.setAttribute('tabindex', '0');
+    wrapper.setAttribute('aria-label', 'View larger image');
+    wrapper.style.touchAction = 'manipulation';
 
-  renderedTabs[tabId] = 'rendering';
-  container.innerHTML = '';
+    var img = document.createElement('img');
+    img.dataset.src = item.src;
+    img.alt = item.alt;
+    img.className = 'gallery_image';
+    img.draggable = false;
+    img.onload = function () { this.parentElement.classList.add('is-loaded'); };
 
-  var FIRST_BATCH = 20;
-  var CHUNK_SIZE = 40;
-  var index = 0;
+    wrapper.appendChild(img);
+    fragment.appendChild(wrapper);
+    lazyObserver.observe(wrapper);
+  });
 
-  function createBatch(start, end) {
-    var fragment = document.createDocumentFragment();
-    for (var i = start; i < end && i < images.length; i++) {
-      var item = images[i];
-      var wrapper = document.createElement('div');
-      wrapper.className = 'gallery_image-wrapper';
-      wrapper.setAttribute('role', 'button');
-      wrapper.setAttribute('tabindex', '0');
-      wrapper.setAttribute('aria-label', 'View larger image');
-      wrapper.style.touchAction = 'manipulation';
-
-      var img = document.createElement('img');
-      img.src = item.src;
-      img.loading = 'lazy';
-      img.alt = item.alt;
-      img.className = 'gallery_image';
-      img.draggable = false;
-      img.onload = function () { this.parentElement.classList.add('is-loaded'); };
-
-      wrapper.appendChild(img);
-      fragment.appendChild(wrapper);
-    }
-    container.appendChild(fragment);
-  }
-
-  createBatch(0, FIRST_BATCH);
-  index = FIRST_BATCH;
-
-  if (onReady) onReady();
-
-  function renderNextChunk() {
-    if (index >= images.length) {
-      renderedTabs[tabId] = 'done';
-      return;
-    }
-    createBatch(index, index + CHUNK_SIZE);
-    index += CHUNK_SIZE;
-    setTimeout(renderNextChunk, 0);
-  }
-
-  if (index < images.length) {
-    setTimeout(renderNextChunk, 0);
-  } else {
-    renderedTabs[tabId] = 'done';
-  }
+  container.appendChild(fragment);
 }
 
 function initGallery() {
@@ -2012,12 +1976,8 @@ function initGallery() {
 
   lightboxImage.setAttribute('draggable', 'false');
 
-  tabPanes.forEach(function (pane) {
-    pane.style.willChange = 'opacity, visibility';
-  });
-
-  gsap.set(tabPanes, { autoAlpha: 0, zIndex: 1, pointerEvents: 'none' });
-  gsap.set('[data-tab-pane="ga"]', { autoAlpha: 1, zIndex: 2, pointerEvents: 'auto' });
+  gsap.set(tabPanes, { display: 'none', autoAlpha: 0, zIndex: 1 });
+  gsap.set('[data-tab-pane="ga"]', { display: 'block', autoAlpha: 1, zIndex: 2 });
   gsap.set(highlight, { xPercent: 0 });
 
   // TABS
@@ -2035,40 +1995,31 @@ function initGallery() {
 
       var oldPane = document.querySelector('[data-tab-pane="' + currentTab + '"]');
       var newPane = document.querySelector('[data-tab-pane="' + targetTab + '"]');
-
       var isFirstVisit = !visitedTabs[targetTab];
       visitedTabs[targetTab] = true;
+      currentTab = targetTab;
 
-      function doSwitch() {
-        currentTab = targetTab;
+      currentTimeline = gsap.timeline();
 
-        currentTimeline = gsap.timeline();
+      currentTimeline
+        .set(newPane, { display: 'block', zIndex: 2 })
+        .set(oldPane, { zIndex: 1 })
+        .to(oldPane, { autoAlpha: 0, duration: 0.3 }, 0)
+        .to(newPane, { autoAlpha: 1, duration: 0.3 }, 0)
+        .set(oldPane, { display: 'none' });
+
+      if (isFirstVisit && !prefersReducedMotion) {
+        var allImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
+        var imagesToAnimate = allImages.slice(0, 12);
+        var imagesToShow = allImages.slice(12);
 
         currentTimeline
-          .set(newPane, { zIndex: 2, pointerEvents: 'auto' })
-          .set(oldPane, { zIndex: 1, pointerEvents: 'none' })
-          .to(oldPane, { autoAlpha: 0, duration: 0.3 }, 0)
-          .to(newPane, { autoAlpha: 1, duration: 0.3 }, 0);
-
-        if (isFirstVisit && !prefersReducedMotion) {
-          var allImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
-          var imagesToAnimate = allImages.slice(0, 12);
-          var imagesToShow = allImages.slice(12);
-
-          currentTimeline
-            .set(imagesToShow, { y: 0, opacity: 1 })
-            .fromTo(imagesToAnimate,
-              { y: 20, opacity: 0 },
-              { y: 0, opacity: 1, duration: 0.35, stagger: 0.03, ease: 'power2.out' },
-              '-=0.2'
-            );
-        }
-      }
-
-      if (!renderedTabs[targetTab]) {
-        renderGallery(galleryData[targetTab], targetTab, doSwitch);
-      } else {
-        doSwitch();
+          .set(imagesToShow, { y: 0, opacity: 1 })
+          .fromTo(imagesToAnimate,
+            { y: 20, opacity: 0 },
+            { y: 0, opacity: 1, duration: 0.35, stagger: 0.03, ease: 'power2.out' },
+            '-=0.2'
+          );
       }
     });
   });
@@ -2084,10 +2035,14 @@ function initGallery() {
     var img = wrapper.querySelector('img');
     if (!img) return;
 
+    if (img.dataset.src) {
+      img.src = img.dataset.src;
+      img.removeAttribute('data-src');
+    }
+
     lastFocusedElement = wrapper;
     lightboxImage.src = img.src;
     lightboxImage.alt = img.alt || '';
-
     document.body.style.overflow = 'hidden';
 
     if (prefersReducedMotion) {
@@ -2101,7 +2056,6 @@ function initGallery() {
         ease: 'power2.out',
         onComplete: function () { lightboxClose.focus(); },
       });
-
       gsap.fromTo(lightboxImage,
         { scale: 0.95 },
         { scale: 1, duration: 0.4, ease: 'back.out(1.5)', delay: 0.1 }
@@ -2119,7 +2073,14 @@ function initGallery() {
       currentLightboxIndex = 0;
     }
 
-    var nextImg = currentLightboxImages[currentLightboxIndex].querySelector('img');
+    var nextWrapper = currentLightboxImages[currentLightboxIndex];
+    var nextImg = nextWrapper.querySelector('img');
+
+    if (nextImg.dataset.src) {
+      nextImg.src = nextImg.dataset.src;
+      nextImg.removeAttribute('data-src');
+    }
+
     var outX = direction === 1 ? -100 : 100;
     var inX = direction === 1 ? 100 : -100;
 
@@ -2272,9 +2233,6 @@ function initGallery() {
 
 document.addEventListener('DOMContentLoaded', function () {
   renderGallery(galleryData.ga, 'ga');
+  renderGallery(galleryData.vip, 'vip');
   initGallery();
-
-  setTimeout(function () {
-    renderGallery(galleryData.vip, 'vip');
-  }, 500);
 });
