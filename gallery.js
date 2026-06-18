@@ -1978,6 +1978,7 @@ function loadNextChunk(tabId) {
 
 function initGallery() {
   var tabBtns = document.querySelectorAll('[data-tab-btn]:not([data-tab-btn="highlight"])');
+  var tabPanes = document.querySelectorAll('[data-tab-pane]');
   var highlight = document.querySelector('[data-tab-btn="highlight"]');
   var galleryContainer = document.querySelector('.gallery_tabs-content');
   var lightboxWrap = document.getElementById('lightbox-wrap');
@@ -1993,53 +1994,64 @@ function initGallery() {
   var SWIPE_THRESHOLD = 60;
   var TAP_SLOP = 6;
 
-  tabBtns.forEach(function (btn) {
-    btn.style.touchAction = 'manipulation';
+  tabBtns.forEach(function (btn) { 
+    btn.style.touchAction = 'manipulation'; 
   });
-
+  
   lightboxImage.setAttribute('draggable', 'false');
 
-  document.querySelector('[data-tab-pane="ga"]').classList.add('is-active');
+  gsap.set(tabPanes, { display: 'none', autoAlpha: 0 });
+  gsap.set('[data-tab-pane="ga"]', { display: 'block', autoAlpha: 1 });
   gsap.set(highlight, { xPercent: 0 });
 
   tabBtns.forEach(function (btn, index) {
     btn.addEventListener('click', function () {
       var targetTab = this.getAttribute('data-tab-btn');
-      if (targetTab === currentTab) return;
+      if (targetTab === currentTab || isTransitioning) return;
 
-      if (currentTimeline) currentTimeline.kill();
+      isTransitioning = true;
+      
+      // SAFARI FAIL-SAFE: Force unlock the UI after 600ms no matter what
+      setTimeout(function() {
+        isTransitioning = false;
+      }, 600);
 
       tabBtns.forEach(function (b) { b.classList.remove('is-active'); });
       this.classList.add('is-active');
-
       gsap.to(highlight, { xPercent: index * 100, duration: 0.3, ease: 'power2.out' });
 
       var oldPane = document.querySelector('[data-tab-pane="' + currentTab + '"]');
       var newPane = document.querySelector('[data-tab-pane="' + targetTab + '"]');
+      var oldList = oldPane.querySelector('.gallery_list');
+
+      // Uncouple the DOM teardown from the GSAP tween
+      gsap.to(oldPane, { autoAlpha: 0, duration: 0.2 });
       
-      var isFirstVisit = galleryState[targetTab].rendered === 0;
-      if (isFirstVisit) {
-        loadNextChunk(targetTab);
-      }
+      setTimeout(function() {
+        oldList.innerHTML = '';
+        state[currentTab].rendered = 0;
+        gsap.set(oldPane, { display: 'none' });
 
-      currentTab = targetTab;
-      currentTimeline = gsap.timeline();
+        currentTab = targetTab;
+        gsap.set(newPane, { display: 'block', autoAlpha: 1 });
+        loadNextChunk(currentTab);
 
-      oldPane.classList.remove('is-active');
-      newPane.classList.add('is-active');
-
-      currentTimeline
-        .to(oldPane, { autoAlpha: 0, duration: 0.2 }, 0)
-        .fromTo(newPane, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.2 }, 0);
-
-      if (isFirstVisit && !prefersReducedMotion) {
-        var allImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
-        currentTimeline.fromTo(allImages.slice(0, 12),
-          { y: 20, opacity: 0 },
-          { y: 0, opacity: 1, duration: 0.35, stagger: 0.03, ease: 'power2.out' },
-          '-=0.1'
-        );
-      }
+        var newItems = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
+        
+        if (!prefersReducedMotion && newItems.length > 0) {
+          gsap.fromTo(newItems,
+            { y: 20, opacity: 0 },
+            { 
+              y: 0, 
+              opacity: 1, 
+              duration: 0.3, 
+              stagger: 0.03, 
+              ease: 'power2.out'
+              // Removed the onComplete lock dependency here
+            }
+          );
+        }
+      }, 200); // Wait exactly 200ms for the fade out to finish, then swap
     });
   });
 
@@ -2048,7 +2060,7 @@ function initGallery() {
     if (isNaN(index)) return;
 
     currentLightboxIndex = index;
-    var itemData = galleryState[currentTab].data[index];
+    var itemData = state[currentTab].data[index];
 
     lastFocusedElement = wrapper;
     lightboxImage.src = itemData.src;
@@ -2074,13 +2086,17 @@ function initGallery() {
   }
 
   function navigateLightbox(direction) {
-    var dataArray = galleryState[currentTab].data;
+    var dataArray = state[currentTab].data;
     currentLightboxIndex += direction;
 
     if (currentLightboxIndex < 0) {
       currentLightboxIndex = dataArray.length - 1;
     } else if (currentLightboxIndex >= dataArray.length) {
       currentLightboxIndex = 0;
+    }
+
+    if (state[currentTab].rendered <= currentLightboxIndex) {
+      loadNextChunk(currentTab);
     }
 
     var nextItem = dataArray[currentLightboxIndex];
@@ -2107,11 +2123,13 @@ function initGallery() {
   }
 
   galleryContainer.addEventListener('click', function (e) {
+    if (isTransitioning) return;
     var clickedWrapper = e.target.closest('.gallery_image-wrapper');
     if (clickedWrapper) openLightbox(clickedWrapper);
   });
 
   galleryContainer.addEventListener('keydown', function (e) {
+    if (isTransitioning) return;
     if (e.key === 'Enter' || e.key === ' ') {
       var focusedWrapper = e.target.closest('.gallery_image-wrapper');
       if (focusedWrapper) {
