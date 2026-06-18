@@ -1903,58 +1903,81 @@ const galleryData = {
 
 var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-var renderedTabs = new Set();
+var renderedTabs = {};
 
-var visitedTabs = new Set(['ga']);
-
-function renderGallery(images, tabId) {
-  if (renderedTabs.has(tabId)) return;
-
+function renderGallery(images, tabId, onReady) {
   var container = document.querySelector('[data-tab-pane="' + tabId + '"] .gallery_list');
   if (!container) return;
 
-  var fragment = document.createDocumentFragment();
-
-  images.forEach(function (item) {
-    var wrapper = document.createElement('div');
-    wrapper.className = 'gallery_image-wrapper';
-    wrapper.setAttribute('role', 'button');
-    wrapper.setAttribute('tabindex', '0');
-    wrapper.setAttribute('aria-label', 'View larger image');
-    wrapper.style.touchAction = 'manipulation';
-
-    var img = document.createElement('img');
-    img.src = item.src;
-    img.loading = 'lazy';
-    img.alt = item.alt;
-    img.className = 'gallery_image';
-    img.draggable = false;
-    img.onload = function () { wrapper.classList.add('is-loaded'); };
-
-    wrapper.appendChild(img);
-    fragment.appendChild(wrapper);
-  });
-
-  container.innerHTML = '';
-  container.appendChild(fragment);
-  renderedTabs.add(tabId);
-}
-
-function getVisibleCount(pane) {
-  var paneRect = pane.getBoundingClientRect();
-  var wrappers = pane.querySelectorAll('.gallery_image-wrapper');
-  var count = 0;
-
-  for (var i = 0; i < wrappers.length; i++) {
-    var rect = wrappers[i].getBoundingClientRect();
-    if (rect.top < paneRect.bottom + 100) {
-      count++;
-    } else {
-      break;
-    }
+  if (renderedTabs[tabId] === 'done') {
+    if (onReady) onReady();
+    return;
   }
 
-  return Math.max(1, Math.min(count, 20));
+  if (renderedTabs[tabId] === 'rendering') {
+    if (onReady) {
+      var check = setInterval(function () {
+        if (renderedTabs[tabId] === 'done') {
+          clearInterval(check);
+          onReady();
+        }
+      }, 16);
+    }
+    return;
+  }
+
+  renderedTabs[tabId] = 'rendering';
+  container.innerHTML = '';
+
+  var FIRST_BATCH = 20;
+  var CHUNK_SIZE = 40;
+  var index = 0;
+
+  function createBatch(start, end) {
+    var fragment = document.createDocumentFragment();
+    for (var i = start; i < end && i < images.length; i++) {
+      var item = images[i];
+      var wrapper = document.createElement('div');
+      wrapper.className = 'gallery_image-wrapper';
+      wrapper.setAttribute('role', 'button');
+      wrapper.setAttribute('tabindex', '0');
+      wrapper.setAttribute('aria-label', 'View larger image');
+      wrapper.style.touchAction = 'manipulation';
+
+      var img = document.createElement('img');
+      img.src = item.src;
+      img.loading = 'lazy';
+      img.alt = item.alt;
+      img.className = 'gallery_image';
+      img.draggable = false;
+      img.onload = function () { this.parentElement.classList.add('is-loaded'); };
+
+      wrapper.appendChild(img);
+      fragment.appendChild(wrapper);
+    }
+    container.appendChild(fragment);
+  }
+
+  createBatch(0, FIRST_BATCH);
+  index = FIRST_BATCH;
+
+  if (onReady) onReady();
+
+  function renderNextChunk() {
+    if (index >= images.length) {
+      renderedTabs[tabId] = 'done';
+      return;
+    }
+    createBatch(index, index + CHUNK_SIZE);
+    index += CHUNK_SIZE;
+    setTimeout(renderNextChunk, 0);
+  }
+
+  if (index < images.length) {
+    setTimeout(renderNextChunk, 0);
+  } else {
+    renderedTabs[tabId] = 'done';
+  }
 }
 
 function initGallery() {
@@ -1970,6 +1993,7 @@ function initGallery() {
   var currentTab = 'ga';
   var currentTimeline = null;
   var lastFocusedElement = null;
+  var visitedTabs = { ga: true };
 
   var currentLightboxImages = [];
   var currentLightboxIndex = 0;
@@ -1988,8 +2012,12 @@ function initGallery() {
 
   lightboxImage.setAttribute('draggable', 'false');
 
-  gsap.set(tabPanes, { display: 'none', autoAlpha: 0, zIndex: 1 });
-  gsap.set('[data-tab-pane="ga"]', { display: 'block', autoAlpha: 1, zIndex: 2 });
+  tabPanes.forEach(function (pane) {
+    pane.style.willChange = 'opacity, visibility';
+  });
+
+  gsap.set(tabPanes, { autoAlpha: 0, zIndex: 1, pointerEvents: 'none' });
+  gsap.set('[data-tab-pane="ga"]', { autoAlpha: 1, zIndex: 2, pointerEvents: 'auto' });
   gsap.set(highlight, { xPercent: 0 });
 
   // TABS
@@ -2005,49 +2033,42 @@ function initGallery() {
 
       gsap.to(highlight, { xPercent: index * 100, duration: 0.3, ease: 'power2.out' });
 
-      // Render images on first visit to this tab
-      if (!renderedTabs.has(targetTab)) {
-        renderGallery(galleryData[targetTab], targetTab);
-      }
-
       var oldPane = document.querySelector('[data-tab-pane="' + currentTab + '"]');
       var newPane = document.querySelector('[data-tab-pane="' + targetTab + '"]');
 
-      var isFirstVisit = !visitedTabs.has(targetTab);
-      visitedTabs.add(targetTab);
-      currentTab = targetTab;
+      var isFirstVisit = !visitedTabs[targetTab];
+      visitedTabs[targetTab] = true;
 
-      // Hide all other panes immediately
-      tabPanes.forEach(function (pane) {
-        if (pane !== oldPane && pane !== newPane) {
-          gsap.set(pane, { display: 'none', autoAlpha: 0 });
-        }
-      });
+      function doSwitch() {
+        currentTab = targetTab;
 
-      currentTimeline = gsap.timeline();
-
-      // Crossfade the panes
-      currentTimeline
-        .set(newPane, { display: 'block', zIndex: 2 })
-        .set(oldPane, { zIndex: 1 })
-        .to(oldPane, { autoAlpha: 0, duration: 0.3 }, 0)
-        .to(newPane, { autoAlpha: 1, duration: 0.3 }, 0)
-        .set(oldPane, { display: 'none' });
-
-      // Only stagger-animate on first visit and if motion is allowed
-      if (isFirstVisit && !prefersReducedMotion) {
-        var visibleCount = getVisibleCount(newPane);
-        var allImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
-        var imagesToAnimate = allImages.slice(0, visibleCount);
-        var imagesToShow = allImages.slice(visibleCount);
+        currentTimeline = gsap.timeline();
 
         currentTimeline
-          .set(imagesToShow, { y: 0, opacity: 1 })
-          .fromTo(imagesToAnimate,
-            { y: 20, opacity: 0 },
-            { y: 0, opacity: 1, duration: 0.35, stagger: 0.03, ease: 'power2.out' },
-            '-=0.2'
-          );
+          .set(newPane, { zIndex: 2, pointerEvents: 'auto' })
+          .set(oldPane, { zIndex: 1, pointerEvents: 'none' })
+          .to(oldPane, { autoAlpha: 0, duration: 0.3 }, 0)
+          .to(newPane, { autoAlpha: 1, duration: 0.3 }, 0);
+
+        if (isFirstVisit && !prefersReducedMotion) {
+          var allImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
+          var imagesToAnimate = allImages.slice(0, 12);
+          var imagesToShow = allImages.slice(12);
+
+          currentTimeline
+            .set(imagesToShow, { y: 0, opacity: 1 })
+            .fromTo(imagesToAnimate,
+              { y: 20, opacity: 0 },
+              { y: 0, opacity: 1, duration: 0.35, stagger: 0.03, ease: 'power2.out' },
+              '-=0.2'
+            );
+        }
+      }
+
+      if (!renderedTabs[targetTab]) {
+        renderGallery(galleryData[targetTab], targetTab, doSwitch);
+      } else {
+        doSwitch();
       }
     });
   });
@@ -2252,4 +2273,8 @@ function initGallery() {
 document.addEventListener('DOMContentLoaded', function () {
   renderGallery(galleryData.ga, 'ga');
   initGallery();
+
+  setTimeout(function () {
+    renderGallery(galleryData.vip, 'vip');
+  }, 500);
 });
