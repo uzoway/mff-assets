@@ -1902,12 +1902,17 @@ const galleryData = {
 };
 
 var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
 var CHUNK_SIZE = 18;
+
 var galleryState = {
   ga: { rendered: 0, total: galleryData.ga.length, data: galleryData.ga },
   vip: { rendered: 0, total: galleryData.vip.length, data: galleryData.vip }
 };
+
+var currentTab = 'ga';
+var currentLightboxIndex = 0;
+var currentTimeline = null;
+var lastFocusedElement = null;
 
 var lazyObserver = new IntersectionObserver(function (entries) {
   entries.forEach(function (entry) {
@@ -1921,7 +1926,6 @@ var lazyObserver = new IntersectionObserver(function (entries) {
   });
 }, { rootMargin: '400px' });
 
-// Triggers the next chunk of images when the user reaches the bottom
 var scrollObserver = new IntersectionObserver(function(entries) {
   entries.forEach(function(entry) {
     if (entry.isIntersecting) {
@@ -1940,17 +1944,19 @@ function loadNextChunk(tabId) {
   var toRender = state.data.slice(state.rendered, state.rendered + CHUNK_SIZE);
   var fragment = document.createDocumentFragment();
 
-  toRender.forEach(function (item) {
+  toRender.forEach(function (item, chunkIndex) {
+    var globalIndex = state.rendered + chunkIndex;
     var wrapper = document.createElement('div');
     wrapper.className = 'gallery_image-wrapper';
     wrapper.setAttribute('role', 'button');
     wrapper.setAttribute('tabindex', '0');
     wrapper.setAttribute('aria-label', 'View larger image');
+    wrapper.setAttribute('data-index', globalIndex);
     wrapper.style.touchAction = 'manipulation';
 
     var img = document.createElement('img');
     img.dataset.src = item.src;
-    img.alt = item.alt;
+    img.alt = item.alt || '';
     img.className = 'gallery_image';
     img.draggable = false;
     img.onload = function () { this.parentElement.classList.add('is-loaded'); };
@@ -1963,7 +1969,6 @@ function loadNextChunk(tabId) {
   container.appendChild(fragment);
   state.rendered += toRender.length;
 
-  // Re-attach observer to the new last element
   var lastChild = container.lastElementChild;
   if (lastChild && state.rendered < state.total) {
     lastChild.setAttribute('data-tab-marker', tabId);
@@ -1973,20 +1978,12 @@ function loadNextChunk(tabId) {
 
 function initGallery() {
   var tabBtns = document.querySelectorAll('[data-tab-btn]:not([data-tab-btn="highlight"])');
-  var tabPanes = document.querySelectorAll('[data-tab-pane]');
   var highlight = document.querySelector('[data-tab-btn="highlight"]');
   var galleryContainer = document.querySelector('.gallery_tabs-content');
   var lightboxWrap = document.getElementById('lightbox-wrap');
   var lightboxImage = document.getElementById('lightbox-image');
   var lightboxClose = document.getElementById('lightbox-close');
   var lightboxOverlay = document.getElementById('lightbox-overlay');
-
-  var currentTab = 'ga';
-  var currentTimeline = null;
-  var lastFocusedElement = null;
-
-  var currentLightboxImages = [];
-  var currentLightboxIndex = 0;
 
   var dragging = false;
   var didDrag = false;
@@ -2002,8 +1999,7 @@ function initGallery() {
 
   lightboxImage.setAttribute('draggable', 'false');
 
-  gsap.set(tabPanes, { display: 'none', autoAlpha: 0, zIndex: 1 });
-  gsap.set('[data-tab-pane="ga"]', { display: 'block', autoAlpha: 1, zIndex: 2 });
+  document.querySelector('[data-tab-pane="ga"]').classList.add('is-active');
   gsap.set(highlight, { xPercent: 0 });
 
   tabBtns.forEach(function (btn, index) {
@@ -2021,7 +2017,6 @@ function initGallery() {
       var oldPane = document.querySelector('[data-tab-pane="' + currentTab + '"]');
       var newPane = document.querySelector('[data-tab-pane="' + targetTab + '"]');
       
-      // Inject the first chunk immediately if the tab has never been visited
       var isFirstVisit = galleryState[targetTab].rendered === 0;
       if (isFirstVisit) {
         loadNextChunk(targetTab);
@@ -2030,44 +2025,34 @@ function initGallery() {
       currentTab = targetTab;
       currentTimeline = gsap.timeline();
 
+      oldPane.classList.remove('is-active');
+      newPane.classList.add('is-active');
+
       currentTimeline
-        .set(newPane, { display: 'block', zIndex: 2 })
-        .set(oldPane, { zIndex: 1 })
-        .to(oldPane, { autoAlpha: 0, duration: 0.3 }, 0)
-        .to(newPane, { autoAlpha: 1, duration: 0.3 }, 0)
-        .set(oldPane, { display: 'none' });
+        .to(oldPane, { autoAlpha: 0, duration: 0.2 }, 0)
+        .fromTo(newPane, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.2 }, 0);
 
       if (isFirstVisit && !prefersReducedMotion) {
         var allImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
-        currentTimeline
-          .set(allImages, { y: 0, opacity: 1 })
-          .fromTo(allImages.slice(0, 12),
-            { y: 20, opacity: 0 },
-            { y: 0, opacity: 1, duration: 0.35, stagger: 0.03, ease: 'power2.out' },
-            '-=0.2'
-          );
+        currentTimeline.fromTo(allImages.slice(0, 12),
+          { y: 20, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.35, stagger: 0.03, ease: 'power2.out' },
+          '-=0.1'
+        );
       }
     });
   });
 
   function openLightbox(wrapper) {
-    var allImages = Array.from(
-      document.querySelectorAll('[data-tab-pane="' + currentTab + '"] .gallery_image-wrapper')
-    );
-    currentLightboxIndex = allImages.indexOf(wrapper);
-    currentLightboxImages = allImages;
+    var index = parseInt(wrapper.getAttribute('data-index'), 10);
+    if (isNaN(index)) return;
 
-    var img = wrapper.querySelector('img');
-    if (!img) return;
-
-    if (img.dataset.src) {
-      img.src = img.dataset.src;
-      img.removeAttribute('data-src');
-    }
+    currentLightboxIndex = index;
+    var itemData = galleryState[currentTab].data[index];
 
     lastFocusedElement = wrapper;
-    lightboxImage.src = img.src;
-    lightboxImage.alt = img.alt || '';
+    lightboxImage.src = itemData.src;
+    lightboxImage.alt = itemData.alt || '';
     document.body.style.overflow = 'hidden';
 
     if (prefersReducedMotion) {
@@ -2077,49 +2062,43 @@ function initGallery() {
     } else {
       gsap.to(lightboxWrap, {
         autoAlpha: 1,
-        duration: 0.3,
+        duration: 0.25,
         ease: 'power2.out',
-        onComplete: function () { lightboxClose.focus(); },
+        onComplete: function () { lightboxClose.focus(); }
       });
       gsap.fromTo(lightboxImage,
-        { scale: 0.95 },
-        { scale: 1, duration: 0.4, ease: 'back.out(1.5)', delay: 0.1 }
+        { scale: 0.96 },
+        { scale: 1, duration: 0.3, ease: 'back.out(1.2)' }
       );
     }
   }
 
   function navigateLightbox(direction) {
+    var dataArray = galleryState[currentTab].data;
     currentLightboxIndex += direction;
 
     if (currentLightboxIndex < 0) {
-      currentLightboxIndex = currentLightboxImages.length - 1;
-    } else if (currentLightboxIndex >= currentLightboxImages.length) {
+      currentLightboxIndex = dataArray.length - 1;
+    } else if (currentLightboxIndex >= dataArray.length) {
       currentLightboxIndex = 0;
     }
 
-    var nextWrapper = currentLightboxImages[currentLightboxIndex];
-    var nextImg = nextWrapper.querySelector('img');
-
-    if (nextImg.dataset.src) {
-      nextImg.src = nextImg.dataset.src;
-      nextImg.removeAttribute('data-src');
-    }
-
-    var outX = direction === 1 ? -100 : 100;
-    var inX = direction === 1 ? 100 : -100;
+    var nextItem = dataArray[currentLightboxIndex];
+    var outX = direction === 1 ? -60 : 60;
+    var inX = direction === 1 ? 60 : -60;
 
     if (prefersReducedMotion) {
-      lightboxImage.src = nextImg.src;
-      lightboxImage.alt = nextImg.alt || '';
+      lightboxImage.src = nextItem.src;
+      lightboxImage.alt = nextItem.alt || '';
       gsap.set(lightboxImage, { x: 0, opacity: 1 });
       return;
     }
 
     gsap.timeline()
-      .to(lightboxImage, { x: outX, opacity: 0, duration: 0.2, ease: 'power1.in' })
+      .to(lightboxImage, { x: outX, opacity: 0, duration: 0.15, ease: 'power1.in' })
       .call(function () {
-        lightboxImage.src = nextImg.src;
-        lightboxImage.alt = nextImg.alt || '';
+        lightboxImage.src = nextItem.src;
+        lightboxImage.alt = nextItem.alt || '';
       })
       .fromTo(lightboxImage,
         { x: inX, opacity: 0 },
@@ -2185,7 +2164,7 @@ function initGallery() {
     if (Math.abs(lastDx) > SWIPE_THRESHOLD) {
       navigateLightbox(lastDx < 0 ? 1 : -1);
     } else if (didDrag) {
-      gsap.to(lightboxImage, { x: 0, duration: 0.3, ease: 'power2.out' });
+      gsap.to(lightboxImage, { x: 0, duration: 0.2, ease: 'power2.out' });
     }
   }
 
@@ -2204,14 +2183,14 @@ function initGallery() {
 
     gsap.to(lightboxWrap, {
       autoAlpha: 0,
-      duration: 0.3,
+      duration: 0.25,
       ease: 'power2.inOut',
       onComplete: function () {
         lightboxImage.src = '';
         gsap.set(lightboxImage, { x: 0 });
         document.body.style.overflow = '';
         if (lastFocusedElement) lastFocusedElement.focus();
-      },
+      }
     });
   }
 
