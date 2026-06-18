@@ -1903,22 +1903,36 @@ const galleryData = {
 
 var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-var lazyObserver = new IntersectionObserver(function (entries) {
-  entries.forEach(function (entry) {
-    if (!entry.isIntersecting) return;
-    var img = entry.target.querySelector('img[data-src]');
-    if (img) {
-      img.src = img.dataset.src;
-      img.removeAttribute('data-src');
-    }
-    lazyObserver.unobserve(entry.target);
-  });
-}, { rootMargin: '400px' });
+// DEBUG OVERLAY
+var debugBox = document.createElement('div');
+debugBox.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:45vh;overflow:auto;background:rgba(0,0,0,0.88);color:#0f0;font:11px/1.4 monospace;padding:8px;z-index:99999;white-space:pre-wrap;';
+document.addEventListener('DOMContentLoaded', function () { document.body.appendChild(debugBox); });
+function dlog(msg) {
+  var t = (performance.now()).toFixed(0);
+  debugBox.textContent = '[' + t + 'ms] ' + msg + '\n' + debugBox.textContent;
+}
+
+// Detects main-thread blocking: schedules a tick every frame.
+// If the gap between ticks is large, the thread was blocked.
+var lastTick = performance.now();
+var maxBlock = 0;
+function blockWatch() {
+  var now = performance.now();
+  var gap = now - lastTick;
+  if (gap > maxBlock) {
+    maxBlock = gap;
+    if (gap > 150) dlog('MAIN THREAD BLOCKED for ' + gap.toFixed(0) + 'ms');
+  }
+  lastTick = now;
+  requestAnimationFrame(blockWatch);
+}
+requestAnimationFrame(blockWatch);
 
 function renderGallery(images, tabId) {
   var container = document.querySelector('[data-tab-pane="' + tabId + '"] .gallery_list');
   if (!container || container.children.length > 0) return;
 
+  var t0 = performance.now();
   var fragment = document.createDocumentFragment();
 
   images.forEach(function (item) {
@@ -1930,18 +1944,21 @@ function renderGallery(images, tabId) {
     wrapper.style.touchAction = 'manipulation';
 
     var img = document.createElement('img');
-    img.dataset.src = item.src;
+    img.src = item.src;
+    img.loading = 'lazy';
     img.alt = item.alt;
     img.className = 'gallery_image';
     img.draggable = false;
-    img.onload = function () { this.parentElement.classList.add('is-loaded'); };
 
     wrapper.appendChild(img);
     fragment.appendChild(wrapper);
-    lazyObserver.observe(wrapper);
   });
 
+  var t1 = performance.now();
   container.appendChild(fragment);
+  var t2 = performance.now();
+
+  dlog(tabId + ': build ' + (t1 - t0).toFixed(0) + 'ms, append ' + (t2 - t1).toFixed(0) + 'ms (' + images.length + ' imgs)');
 }
 
 function initGallery() {
@@ -1970,10 +1987,7 @@ function initGallery() {
   var SWIPE_THRESHOLD = 60;
   var TAP_SLOP = 6;
 
-  tabBtns.forEach(function (btn) {
-    btn.style.touchAction = 'manipulation';
-  });
-
+  tabBtns.forEach(function (btn) { btn.style.touchAction = 'manipulation'; });
   lightboxImage.setAttribute('draggable', 'false');
 
   gsap.set(tabPanes, { display: 'none', autoAlpha: 0, zIndex: 1 });
@@ -1983,6 +1997,9 @@ function initGallery() {
   // TABS
   tabBtns.forEach(function (btn, index) {
     btn.addEventListener('click', function () {
+      var tapTime = performance.now();
+      dlog('TAB TAP registered: ' + this.getAttribute('data-tab-btn'));
+
       var targetTab = this.getAttribute('data-tab-btn');
       if (targetTab === currentTab) return;
 
@@ -1999,8 +2016,8 @@ function initGallery() {
       visitedTabs[targetTab] = true;
       currentTab = targetTab;
 
+      var ts0 = performance.now();
       currentTimeline = gsap.timeline();
-
       currentTimeline
         .set(newPane, { display: 'block', zIndex: 2 })
         .set(oldPane, { zIndex: 1 })
@@ -2012,7 +2029,6 @@ function initGallery() {
         var allImages = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
         var imagesToAnimate = allImages.slice(0, 12);
         var imagesToShow = allImages.slice(12);
-
         currentTimeline
           .set(imagesToShow, { y: 0, opacity: 1 })
           .fromTo(imagesToAnimate,
@@ -2021,10 +2037,11 @@ function initGallery() {
             '-=0.2'
           );
       }
+      var ts1 = performance.now();
+      dlog('switch handler sync work: ' + (ts1 - ts0).toFixed(0) + 'ms');
     });
   });
 
-  // LIGHTBOX OPEN
   function openLightbox(wrapper) {
     var allImages = Array.from(
       document.querySelectorAll('[data-tab-pane="' + currentTab + '"] .gallery_image-wrapper')
@@ -2034,11 +2051,6 @@ function initGallery() {
 
     var img = wrapper.querySelector('img');
     if (!img) return;
-
-    if (img.dataset.src) {
-      img.src = img.dataset.src;
-      img.removeAttribute('data-src');
-    }
 
     lastFocusedElement = wrapper;
     lightboxImage.src = img.src;
@@ -2050,37 +2062,17 @@ function initGallery() {
       gsap.set(lightboxImage, { scale: 1 });
       lightboxClose.focus();
     } else {
-      gsap.to(lightboxWrap, {
-        autoAlpha: 1,
-        duration: 0.3,
-        ease: 'power2.out',
-        onComplete: function () { lightboxClose.focus(); },
-      });
-      gsap.fromTo(lightboxImage,
-        { scale: 0.95 },
-        { scale: 1, duration: 0.4, ease: 'back.out(1.5)', delay: 0.1 }
-      );
+      gsap.to(lightboxWrap, { autoAlpha: 1, duration: 0.3, ease: 'power2.out', onComplete: function () { lightboxClose.focus(); } });
+      gsap.fromTo(lightboxImage, { scale: 0.95 }, { scale: 1, duration: 0.4, ease: 'back.out(1.5)', delay: 0.1 });
     }
   }
 
-  // LIGHTBOX NAVIGATE
   function navigateLightbox(direction) {
     currentLightboxIndex += direction;
+    if (currentLightboxIndex < 0) currentLightboxIndex = currentLightboxImages.length - 1;
+    else if (currentLightboxIndex >= currentLightboxImages.length) currentLightboxIndex = 0;
 
-    if (currentLightboxIndex < 0) {
-      currentLightboxIndex = currentLightboxImages.length - 1;
-    } else if (currentLightboxIndex >= currentLightboxImages.length) {
-      currentLightboxIndex = 0;
-    }
-
-    var nextWrapper = currentLightboxImages[currentLightboxIndex];
-    var nextImg = nextWrapper.querySelector('img');
-
-    if (nextImg.dataset.src) {
-      nextImg.src = nextImg.dataset.src;
-      nextImg.removeAttribute('data-src');
-    }
-
+    var nextImg = currentLightboxImages[currentLightboxIndex].querySelector('img');
     var outX = direction === 1 ? -100 : 100;
     var inX = direction === 1 ? 100 : -100;
 
@@ -2093,146 +2085,87 @@ function initGallery() {
 
     gsap.timeline()
       .to(lightboxImage, { x: outX, opacity: 0, duration: 0.2, ease: 'power1.in' })
-      .call(function () {
-        lightboxImage.src = nextImg.src;
-        lightboxImage.alt = nextImg.alt || '';
-      })
-      .fromTo(lightboxImage,
-        { x: inX, opacity: 0 },
-        { x: 0, opacity: 1, duration: 0.2, ease: 'power1.out' }
-      );
+      .call(function () { lightboxImage.src = nextImg.src; lightboxImage.alt = nextImg.alt || ''; })
+      .fromTo(lightboxImage, { x: inX, opacity: 0 }, { x: 0, opacity: 1, duration: 0.2, ease: 'power1.out' });
   }
 
-  // GALLERY CLICK / KEYBOARD
   galleryContainer.addEventListener('click', function (e) {
     var clickedWrapper = e.target.closest('.gallery_image-wrapper');
-    if (clickedWrapper) openLightbox(clickedWrapper);
+    if (clickedWrapper) { dlog('IMAGE TAP registered'); openLightbox(clickedWrapper); }
   });
 
   galleryContainer.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' || e.key === ' ') {
       var focusedWrapper = e.target.closest('.gallery_image-wrapper');
-      if (focusedWrapper) {
-        e.preventDefault();
-        openLightbox(focusedWrapper);
-      }
+      if (focusedWrapper) { e.preventDefault(); openLightbox(focusedWrapper); }
     }
   });
 
-  // LIGHTBOX SWIPE
   function onPointerDown(e) {
     if (e.target.closest('.lightbox_close') || e.target === lightboxOverlay) return;
-    dragging = true;
-    didDrag = false;
-    startX = e.clientX;
-    startY = e.clientY;
-    lastDx = 0;
-
+    dragging = true; didDrag = false; startX = e.clientX; startY = e.clientY; lastDx = 0;
     lightboxImage.style.cursor = 'grabbing';
     gsap.killTweensOf(lightboxImage, 'x');
-
     document.addEventListener('pointermove', onPointerMove);
     document.addEventListener('pointerup', onPointerUp);
     document.addEventListener('pointercancel', onPointerUp);
   }
-
   function onPointerMove(e) {
     if (!dragging) return;
-    var dx = e.clientX - startX;
-    var dy = e.clientY - startY;
-
-    if (!didDrag && (Math.abs(dx) > TAP_SLOP || Math.abs(dy) > TAP_SLOP)) {
-      didDrag = true;
-    }
-
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      lastDx = dx;
-      gsap.set(lightboxImage, { x: dx });
-    }
+    var dx = e.clientX - startX; var dy = e.clientY - startY;
+    if (!didDrag && (Math.abs(dx) > TAP_SLOP || Math.abs(dy) > TAP_SLOP)) didDrag = true;
+    if (Math.abs(dx) >= Math.abs(dy)) { lastDx = dx; gsap.set(lightboxImage, { x: dx }); }
   }
-
   function onPointerUp() {
     if (!dragging) return;
-    dragging = false;
-    lightboxImage.style.cursor = 'grab';
-
+    dragging = false; lightboxImage.style.cursor = 'grab';
     document.removeEventListener('pointermove', onPointerMove);
     document.removeEventListener('pointerup', onPointerUp);
     document.removeEventListener('pointercancel', onPointerUp);
-
-    if (Math.abs(lastDx) > SWIPE_THRESHOLD) {
-      navigateLightbox(lastDx < 0 ? 1 : -1);
-    } else if (didDrag) {
-      gsap.to(lightboxImage, { x: 0, duration: 0.3, ease: 'power2.out' });
-    }
+    if (Math.abs(lastDx) > SWIPE_THRESHOLD) navigateLightbox(lastDx < 0 ? 1 : -1);
+    else if (didDrag) gsap.to(lightboxImage, { x: 0, duration: 0.3, ease: 'power2.out' });
   }
-
   lightboxImage.addEventListener('pointerdown', onPointerDown);
   lightboxImage.addEventListener('click', function (e) { e.stopPropagation(); });
 
-  // LIGHTBOX CLOSE
   function closeLightbox() {
     if (prefersReducedMotion) {
       gsap.set(lightboxWrap, { autoAlpha: 0 });
-      lightboxImage.src = '';
-      gsap.set(lightboxImage, { x: 0 });
+      lightboxImage.src = ''; gsap.set(lightboxImage, { x: 0 });
       document.body.style.overflow = '';
       if (lastFocusedElement) lastFocusedElement.focus();
       return;
     }
-
     gsap.to(lightboxWrap, {
-      autoAlpha: 0,
-      duration: 0.3,
-      ease: 'power2.inOut',
+      autoAlpha: 0, duration: 0.3, ease: 'power2.inOut',
       onComplete: function () {
-        lightboxImage.src = '';
-        gsap.set(lightboxImage, { x: 0 });
+        lightboxImage.src = ''; gsap.set(lightboxImage, { x: 0 });
         document.body.style.overflow = '';
         if (lastFocusedElement) lastFocusedElement.focus();
-      },
+      }
     });
   }
-
   lightboxClose.addEventListener('click', closeLightbox);
   lightboxOverlay.addEventListener('click', closeLightbox);
 
-  // LIGHTBOX KEYBOARD / FOCUS TRAP
   lightboxWrap.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && gsap.getProperty(lightboxWrap, 'opacity') > 0) {
-      closeLightbox();
-      return;
-    }
-
+    if (e.key === 'Escape' && gsap.getProperty(lightboxWrap, 'opacity') > 0) { closeLightbox(); return; }
     if (e.key === 'ArrowRight') navigateLightbox(1);
     if (e.key === 'ArrowLeft') navigateLightbox(-1);
-
     if (e.key === 'Tab') {
-      var focusableElements = lightboxWrap.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
-      if (!focusableElements.length) return;
-
-      var firstElement = focusableElements[0];
-      var lastElement = focusableElements[focusableElements.length - 1];
-
-      if (e.shiftKey) {
-        if (document.activeElement === firstElement) {
-          lastElement.focus();
-          e.preventDefault();
-        }
-      } else {
-        if (document.activeElement === lastElement) {
-          firstElement.focus();
-          e.preventDefault();
-        }
-      }
+      var f = lightboxWrap.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (!f.length) return;
+      var first = f[0]; var last = f[f.length - 1];
+      if (e.shiftKey) { if (document.activeElement === first) { last.focus(); e.preventDefault(); } }
+      else { if (document.activeElement === last) { first.focus(); e.preventDefault(); } }
     }
   });
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+  dlog('DOMContentLoaded');
   renderGallery(galleryData.ga, 'ga');
   renderGallery(galleryData.vip, 'vip');
   initGallery();
+  dlog('init complete. Tap tabs/images to test.');
 });
