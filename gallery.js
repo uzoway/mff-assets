@@ -2040,7 +2040,7 @@ function initGallery() {
 
       var newItems = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
       if (!prefersReducedMotion && newItems.length > 0) {
-        gsap.fromTo(newItems.slice(0, 15),
+        gsap.fromTo(newItems.slice(0, 24),
           { y: 20, opacity: 0 },
           { y: 0, opacity: 1, duration: 0.3, stagger: 0.02, ease: 'power2.out' }
         );
