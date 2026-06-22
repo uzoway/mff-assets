@@ -2004,8 +2004,14 @@ function initGallery() {
   lightboxImage.setAttribute('draggable', 'false');
 
   // Initial State
-  tabPanes.forEach(function(pane) { pane.style.display = 'none'; });
-  document.querySelector('[data-tab-pane="ga"]').style.display = 'block';
+ // Initial State
+  tabPanes.forEach(function(pane) { 
+    pane.style.display = 'none'; 
+    pane.classList.remove('is-active');
+  });
+  var initialPane = document.querySelector('[data-tab-pane="ga"]');
+  initialPane.style.display = 'block';
+  initialPane.classList.add('is-active');
   gsap.set(highlight, { xPercent: 0 });
 
   // 1. LIGHTNING FAST TAB SWITCHING (No JS locks)
@@ -2019,12 +2025,14 @@ function initGallery() {
       this.classList.add('is-active');
       gsap.to(highlight, { xPercent: index * 100, duration: 0.3, ease: 'power2.out' });
 
-      var oldPane = document.querySelector('[data-tab-pane="' + currentTab + '"]');
+     var oldPane = document.querySelector('[data-tab-pane="' + currentTab + '"]');
       var newPane = document.querySelector('[data-tab-pane="' + targetTab + '"]');
 
-      // Instant DOM swap - zero layout calculations
       oldPane.style.display = 'none';
+      oldPane.classList.remove('is-active');
+      
       newPane.style.display = 'block';
+      newPane.classList.add('is-active');
       currentTab = targetTab;
 
       // Inject HTML if empty
