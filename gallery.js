@@ -2000,11 +2000,7 @@ function initGallery() {
   var SWIPE_THRESHOLD = 60;
   var TAP_SLOP = 6;
 
-  tabBtns.forEach(function (btn) { btn.style.touchAction = 'manipulation'; });
-  lightboxImage.setAttribute('draggable', 'false');
-
-  // Initial State
- // Initial State
+    // Initial State
   tabPanes.forEach(function(pane) { 
     pane.style.display = 'none'; 
     pane.classList.remove('is-active');
@@ -2013,6 +2009,9 @@ function initGallery() {
   initialPane.style.display = 'block';
   initialPane.classList.add('is-active');
   gsap.set(highlight, { xPercent: 0 });
+
+  tabBtns.forEach(function (btn) { btn.style.touchAction = 'manipulation'; });
+  lightboxImage.setAttribute('draggable', 'false');
 
   // 1. LIGHTNING FAST TAB SWITCHING (No JS locks)
   tabBtns.forEach(function (btn, index) {
