@@ -2000,49 +2000,44 @@ function initGallery() {
   var SWIPE_THRESHOLD = 60;
   var TAP_SLOP = 6;
 
-    // Initial State
-  tabPanes.forEach(function(pane) { 
-    pane.style.display = 'none'; 
-    pane.classList.remove('is-active');
+  if (lightboxImage) lightboxImage.setAttribute('draggable', 'false');
+
+  tabPanes.forEach(function (pane) {
+    pane.style.display = 'block';
+    gsap.set(pane, { autoAlpha: 0, zIndex: 1 });
   });
   var initialPane = document.querySelector('[data-tab-pane="ga"]');
-  initialPane.style.display = 'block';
-  initialPane.classList.add('is-active');
+  gsap.set(initialPane, { autoAlpha: 1, zIndex: 2 });
   gsap.set(highlight, { xPercent: 0 });
 
-  tabBtns.forEach(function (btn) { btn.style.touchAction = 'manipulation'; });
-  lightboxImage.setAttribute('draggable', 'false');
+  function switchPane(targetTab) {
+    tabPanes.forEach(function (pane) {
+      gsap.set(pane, { autoAlpha: 0, zIndex: 1 });
+    });
+    var targetPane = document.querySelector('[data-tab-pane="' + targetTab + '"]');
+    gsap.set(targetPane, { autoAlpha: 1, zIndex: 2 });
+    return targetPane;
+  }
 
-  // 1. LIGHTNING FAST TAB SWITCHING (No JS locks)
   tabBtns.forEach(function (btn, index) {
+    btn.style.touchAction = 'manipulation';
     btn.addEventListener('click', function () {
       var targetTab = this.getAttribute('data-tab-btn');
       if (targetTab === currentTab) return;
 
-      // Update Buttons
       tabBtns.forEach(function (b) { b.classList.remove('is-active'); });
       this.classList.add('is-active');
       gsap.to(highlight, { xPercent: index * 100, duration: 0.3, ease: 'power2.out' });
 
-     var oldPane = document.querySelector('[data-tab-pane="' + currentTab + '"]');
-      var newPane = document.querySelector('[data-tab-pane="' + targetTab + '"]');
-
-      oldPane.style.display = 'none';
-      oldPane.classList.remove('is-active');
-      
-      newPane.style.display = 'block';
-      newPane.classList.add('is-active');
+      var newPane = switchPane(targetTab);
       currentTab = targetTab;
 
-      // Inject HTML if empty
       if (state[targetTab].rendered === 0) {
         loadNextChunk(targetTab);
       }
 
-      // Kill any leftover animations immediately
       gsap.killTweensOf('.gallery_image-wrapper');
 
-      // Stagger only the visible items
       var newItems = Array.from(newPane.querySelectorAll('.gallery_image-wrapper'));
       if (!prefersReducedMotion && newItems.length > 0) {
         gsap.fromTo(newItems.slice(0, 15),
@@ -2120,7 +2115,6 @@ function initGallery() {
       );
   }
 
-  // Gallery Click & Keyboard (Delegated)
   galleryContainer.addEventListener('click', function (e) {
     var clickedWrapper = e.target.closest('.gallery_image-wrapper');
     if (clickedWrapper) openLightbox(clickedWrapper);
@@ -2136,7 +2130,6 @@ function initGallery() {
     }
   });
 
-  // Lightbox Swipe Logic
   function onPointerDown(e) {
     if (e.target.closest('.lightbox_close') || e.target === lightboxOverlay) return;
     dragging = true;
